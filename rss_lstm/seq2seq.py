@@ -143,11 +143,11 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
             else:
-                #x = X[:,:,t]
-                if prediction == False:
-                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
-                else:
-                    x = X[:,:,t]
+                x = X[:,:,t]
+#                if prediction == False:
+#                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
+#                else:
+#                    x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
