@@ -60,6 +60,7 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
     accs = []
     batch_count = 0
     examples_count = 0
+    model.train()
     for i, (inputs, labels, target_output_frames) in enumerate(train_loader, 1):
         true_positive = 0
         true_negative = 0

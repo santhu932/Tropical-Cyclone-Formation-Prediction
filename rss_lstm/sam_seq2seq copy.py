@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from rss_lstm.convLSTM import ConvLSTM
+from rss_lstm.sam_convLSTM import SAMConvLSTM
 from vit_pytorch import ViT
 import torchvision.transforms as transforms
 import numpy as np
@@ -8,7 +8,7 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class Seq2Seq(nn.Module):
 
-    def __init__(self, num_channels, num_kernels, kernel_size, padding,
+    def __init__(self, attention_hidden_dims, num_channels, num_kernels, kernel_size, padding,
     activation, frame_size, num_layers, num_timesteps, bias, w_init, hidden_size):
 
         super(Seq2Seq, self).__init__()
@@ -17,6 +17,7 @@ class Seq2Seq(nn.Module):
         self.hidden_size = hidden_size
         self.num_channels = num_channels
         self.num_timesteps = num_timesteps
+        self.attention_hidden_dims = attention_hidden_dims
 
         if activation == "tanh":
             self.activation = torch.tanh
@@ -31,14 +32,14 @@ class Seq2Seq(nn.Module):
         self.module_list = nn.ModuleList()
 
         # Add First layer (Different in_channels than the rest)
-        self.module_list.append(ConvLSTM(
+        self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
                 in_channels=num_channels, out_channels=self.hidden_size,
                 kernel_size=kernel_size, padding=padding,
                 activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init)),
         self.module_list.append(nn.BatchNorm2d(num_features=self.hidden_size))
 
 
-        self.module_list.append(ConvLSTM(
+        self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
                 in_channels=self.hidden_size, out_channels=num_kernels,
                 kernel_size=kernel_size, padding=padding,
                 activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init)),
@@ -48,7 +49,7 @@ class Seq2Seq(nn.Module):
         # Add rest of the layers
         for l in range(3, num_layers+1):
 
-            self.module_list.append(ConvLSTM(
+            self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
                     in_channels=num_kernels, out_channels=num_kernels,
                     kernel_size=kernel_size, padding=padding,
                     activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init))
@@ -130,15 +131,17 @@ class Seq2Seq(nn.Module):
     def forward(self, X, target_frames = None, prob_mask = None, prob_mask1 = None, prediction = False):
         previous_H = {}
         previous_C = {}
+        previous_M = {}
         for t in range(self.num_timesteps):
             if t == 0:
                 x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
-                        output, C = module(x)
+                        output, C, M = module(x)
                         previous_H[name] = output
                         previous_C[name] = C
+                        previous_M[name] = M
                     else:
                         output = module(x)
                     x = output
@@ -152,9 +155,10 @@ class Seq2Seq(nn.Module):
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
-                        output, C = module(x, previous_H[name], previous_C[name])
+                        output, C, M = module(x, previous_H[name], previous_C[name], previous_M[name])
                         previous_H[name] = output
                         previous_C[name] = C
+                        previous_M[name] = M
                     else:
                         output = module(x)
                     x = output
@@ -170,10 +174,11 @@ class Seq2Seq(nn.Module):
         for i, module in enumerate(self.module_list):
             if i % 2 == 0:
                 name = f"convlstm{(i // 2) + 1}"
-                output, C = module(recon_frame, previous_H[name], previous_C[name])
+                output, C, M = module(recon_frame, previous_H[name], previous_C[name], previous_M[name])
                 previous_H[name] = output
                 previous_C[name] = C
-            else:
+                previous_M[name] = M
+             else:
                 output = module(recon_frame)
             recon_frame = output
         recon_frame = self.decoder(recon_frame)
