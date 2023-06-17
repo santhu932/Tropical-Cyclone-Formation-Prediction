@@ -82,7 +82,7 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
         prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
 
-        outputs, output_frames = model(inputs.float(), target_output_frames, prob_mask, prob_mask1)
+        outputs, output_frames = model(inputs.float(), prediction = True)
         log_probs = torch.sigmoid(outputs)
         labels = labels.reshape(labels.shape[0], 1)
         loss_func = torch.nn.BCELoss(reduction='none')

@@ -91,6 +91,7 @@ class Seq2Seq(nn.Module):
         self.batchnorm5 = nn.BatchNorm1d(num_features=128)
         self.dropout4 = nn.Dropout(p=0.25)
         self.fc4 = nn.Linear(128, 1)
+        
 
         self.fc = nn.Sequential(
             self.fc1,
@@ -143,11 +144,11 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
             else:
-                x = X[:,:,t]
-#                if prediction == False:
-#                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
-#                else:
-#                    x = X[:,:,t]
+                #x = X[:,:,t]
+                if prediction == False:
+                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
+                else:
+                    x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
@@ -160,7 +161,7 @@ class Seq2Seq(nn.Module):
                 recon_frame = self.decoder(x)
 
         
-        
+        #temp = output.clone()
         recon_frames = torch.zeros(recon_frame.shape[0], 2, recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3], device = device)
         recon_frames[:,0] = recon_frame.clone()
         #recon_frame = recon_frame.reshape(recon_frame.shape[0], recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3])
@@ -168,7 +169,7 @@ class Seq2Seq(nn.Module):
             recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, 0]
         for i, module in enumerate(self.module_list):
             if i % 2 == 0:
-                name = f"convlstm{(i // 2) + 1}"
+                name = f"convlstm{3 - (i//2)}"
                 output, C = module(recon_frame, previous_H[name], previous_C[name])
                 previous_H[name] = output
                 previous_C[name] = C
@@ -179,7 +180,7 @@ class Seq2Seq(nn.Module):
         recon_frames[:,1] = recon_frame.clone()
 
         
-        
+        #output = output - temp
         batch_size, n_channels, height, width = output.size()
         flatten_size = n_channels * height * width
         flatten_frame = output.reshape(batch_size, flatten_size)

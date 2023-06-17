@@ -434,7 +434,7 @@ def data_preprocessing_forecasting_new(data, config):
         sampled_data[i,2, :, :, :] = reshaped_data[val - 3, 0, :, :, :]
         sampled_data[i,3, :, :, :] = reshaped_data[val - 2, 0, :, :, :]
         sampled_data[i,4, :, :, :] = reshaped_data[val - 1, 0, :, :, :]
-        sampled_data[i,5, :, :, :] = reshaped_data[val, 0, :, :, :]
+        sampled_data[i,5, :, :, :] = reshaped_data[val - 0, 0, :, :, :]
     
     transform1 = transforms.Compose([
         #transforms.ToPILImage(),
