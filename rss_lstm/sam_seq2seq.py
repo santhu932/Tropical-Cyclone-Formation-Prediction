@@ -97,14 +97,14 @@ class Seq2Seq(nn.Module):
         self.fc = nn.Sequential(
             self.fc1,
             self.activation,
-            self.batchnorm3,
+            #self.batchnorm3,
             self.dropout3,
             self.fc2,
             self.activation,
-            self.batchnorm4,
+            #self.batchnorm4,
             self.fc3,
             self.activation,
-            self.batchnorm5,
+            #self.batchnorm5,
             self.dropout4,
             self.fc4
         )
@@ -124,9 +124,9 @@ class Seq2Seq(nn.Module):
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LeakyReLU):
             m.negative_slope = 0.1
-			
+            
 
-		
+        
                 
     def forward(self, X, target_frames = None, prob_mask = None, prob_mask1 = None, prediction = False):
         previous_H = {}
@@ -178,7 +178,7 @@ class Seq2Seq(nn.Module):
                 previous_H[name] = output
                 previous_C[name] = C
                 previous_M[name] = M
-             else:
+            else:
                 output = module(recon_frame)
             recon_frame = output
         recon_frame = self.decoder(recon_frame)

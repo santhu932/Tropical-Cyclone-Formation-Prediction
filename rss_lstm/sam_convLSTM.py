@@ -51,7 +51,7 @@ class SAMConvLSTM(nn.Module):
 
         # Unroll over time steps
         
-        H, C, M = self.convLSTMcell(X, H, C, M)
+        H, C, M = self.sam_convLSTMcell(X, H, C, M)
 
         output = H
 

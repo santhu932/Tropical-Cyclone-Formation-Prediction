@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from rss_lstm.seq2seq import Seq2Seq
+from rss_lstm.sam_seq2seq import Seq2Seq
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
 import torchvision.transforms as transforms
@@ -11,28 +11,30 @@ import random
 import math
 from lstm import utils
 import wandb
+import data
 
 config = dict(epochs = 50,
 				clip = 0.0, 
 				s = 10, 
-				num_channels = 15,
+				num_channels = 13,
 				num_kernels = 64,
-				kernel_size = (5, 5),
-				padding = (2, 2), 
+				kernel_size = (3, 3),
+				padding = (1, 1),
 				activation = "elu",
 				frame_size = (41, 161), 
 				num_layers=3, 
 				bias = True,
 				w_init = True,
-				batch_size = 32,
-				lr = 0.0005,
+				batch_size = 4,
+				lr = 0.001,
 				hidden_size = 128,
 				weight_decay = 0.0,
 				num_timesteps = 4,
                 threshold = 0.5,
                 threshold_decay = 0.95,
                 sampling_step1 = 15,
-                sampling_step2 = 30
+                sampling_step2 = 30,
+                attention_hidden_dims = 4
 				)
               
 # Use GPU if available
@@ -68,20 +70,20 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         false_negative = 0
         inputs, labels, target_output_frames = inputs.float().to(device), labels.float().to(device), target_output_frames.float().to(device)
         #RSS
-        prob_mask = torch.rand(labels.shape[0], config.num_timesteps - 1)
-        prob_mask1 = torch.rand(labels.shape[0], 1)
-        prob_mask, prob_mask1 = prob_mask.to(device), prob_mask1.to(device)
-        if epoch < config.sampling_step1:
-            prob_mask = (prob_mask < config.threshold).float()
-            prob_mask1 = (prob_mask1 < config.threshold).float()
-        elif epoch < config.sampling_step2:
-            prob_mask = (prob_mask < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
-            prob_mask1 = (prob_mask1 < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
-        else:
-            prob_mask = (prob_mask < 1.0).float()
-            prob_mask1 = (prob_mask1 < 1.0).float()
-        prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
-        prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
+#        prob_mask = torch.rand(labels.shape[0], config.num_timesteps - 1)
+#        prob_mask1 = torch.rand(labels.shape[0], 1)
+#        prob_mask, prob_mask1 = prob_mask.to(device), prob_mask1.to(device)
+#        if epoch < config.sampling_step1:
+#            prob_mask = (prob_mask < config.threshold).float()
+#            prob_mask1 = (prob_mask1 < config.threshold).float()
+#        elif epoch < config.sampling_step2:
+#            prob_mask = (prob_mask < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
+#            prob_mask1 = (prob_mask1 < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
+#        else:
+#            prob_mask = (prob_mask < 1.0).float()
+#            prob_mask1 = (prob_mask1 < 1.0).float()
+#        prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
+#        prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
 
         outputs, output_frames = model(inputs.float(), prediction = True)
         log_probs = torch.sigmoid(outputs)
@@ -112,7 +114,7 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         accs.append(acc.cpu().numpy())
     return training_loss / len(train_loader), np.mean(accs)
 
-def eval_epoch(model, test_loader, epoch, config, example_data, example_target):
+def eval_epoch(model, test_loader, epoch, config):
     test_loss = 0.
     all_predicted_labels = []
     all_labels = []
@@ -122,12 +124,12 @@ def eval_epoch(model, test_loader, epoch, config, example_data, example_target):
     false_negative = 0
     with torch.no_grad():
         for i, (inputs, labels, target_output_frames) in enumerate(test_loader, 1):
-            example_data, example_target = example_data.float().to(device), example_target.float().to(device)
+            #example_data, example_target = example_data.float().to(device), example_target.float().to(device)
             inputs, labels, target_output_frames = inputs.float().to(device), labels.float().to(device), target_output_frames.to(device)
-            if i == 1:
-                inputs[0] = example_data[0]
-                labels[0] = 1
-                target_output_frames[0] = example_target[0]
+#            if i == 1:
+#                inputs[0] = example_data[0]
+#                labels[0] = 1
+#                target_output_frames[0] = example_target[0]
             outputs, output_frames = model(inputs.float(), prediction = True)
             log_probs = torch.sigmoid(outputs)
             labels = labels.reshape(labels.shape[0], 1)
@@ -135,21 +137,21 @@ def eval_epoch(model, test_loader, epoch, config, example_data, example_target):
             bce_loss = loss_func(log_probs, labels)
             bce_loss = bce_loss/torch.max(bce_loss)
             label_loss = torch.sum(bce_loss) / labels.shape[0]
-            if epoch == 49 and i == 1:
-                for j in range(labels.shape[0]):
-                    if labels[j] == 1:
-                        print(j)
-                        target_array= target_output_frames.clone().detach().cpu().numpy()
-                        predicted_array = output_frames.clone().detach().cpu().numpy()
-                        target_arrayReshaped_tplus1 = target_array[j,0].reshape(target_array[j,0].shape[0], -1)
-                        predicted_arrayReshaped_tplus1 = predicted_array[j,0].reshape(predicted_array[j,0].shape[0], -1)
-                        target_arrayReshaped_tplus2 = target_array[j,1].reshape(target_array[j,1].shape[0], -1)
-                        predicted_arrayReshaped_tplus2 = predicted_array[j,1].reshape(predicted_array[j,1].shape[0], -1)
-                        np.savetxt('predicted_array_tplus1.txt', predicted_arrayReshaped_tplus1)
-                        np.savetxt('target_array_tplus1.txt', target_arrayReshaped_tplus1)
-                        np.savetxt('predicted_array_tplus2.txt', predicted_arrayReshaped_tplus2)
-                        np.savetxt('target_array_tplus2.txt', target_arrayReshaped_tplus2)
-                        break
+#            if epoch == 49 and i == 1:
+#                for j in range(labels.shape[0]):
+#                    if labels[j] == 1:
+#                        print(j)
+#                        target_array= target_output_frames.clone().detach().cpu().numpy()
+#                        predicted_array = output_frames.clone().detach().cpu().numpy()
+#                        target_arrayReshaped_tplus1 = target_array[j,0].reshape(target_array[j,0].shape[0], -1)
+#                        predicted_arrayReshaped_tplus1 = predicted_array[j,0].reshape(predicted_array[j,0].shape[0], -1)
+#                        target_arrayReshaped_tplus2 = target_array[j,1].reshape(target_array[j,1].shape[0], -1)
+#                        predicted_arrayReshaped_tplus2 = predicted_array[j,1].reshape(predicted_array[j,1].shape[0], -1)
+#                        np.savetxt('predicted_array_tplus1.txt', predicted_arrayReshaped_tplus1)
+#                        np.savetxt('target_array_tplus1.txt', target_arrayReshaped_tplus1)
+#                        np.savetxt('predicted_array_tplus2.txt', predicted_arrayReshaped_tplus2)
+#                        np.savetxt('target_array_tplus2.txt', target_arrayReshaped_tplus2)
+#                        break
                 #torch.onnx.export(model, inputs, "model.onnx")
                 #wandb.save("model.onnx")
 
@@ -175,12 +177,12 @@ def eval_epoch(model, test_loader, epoch, config, example_data, example_target):
     return test_loss / len(test_loader.dataset), acc, precision, recall, f1
 
 
-def run_model(model, train_loader, test_loader, optimizer, config, example_data, example_target):
+def run_model(model, train_loader, test_loader, optimizer, config):
     wandb.watch(model, log="all", log_freq=10)
     epochs = config.epochs
     for epoch in range(epochs):
         train_loss, train_acc = train_epoch(model, optimizer, train_loader, epoch, config)
-        test_loss, test_acc, precision, recall, f1 = eval_epoch(model, test_loader, epoch, config, example_data, example_target)
+        test_loss, test_acc, precision, recall, f1 = eval_epoch(model, test_loader, epoch, config)
         loss_dict = {'train_loss': train_loss, 'test_loss': test_loss}
         wandb.log(loss_dict)
         print(
@@ -190,34 +192,36 @@ def run_model(model, train_loader, test_loader, optimizer, config, example_data,
      
 
 def make(config):
-    train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
-    data, target = train_npz['data'], train_npz['target']
-    mean = np.mean(data, axis=(0, 2, 3))
-    std = np.std(data, axis=(0, 2, 3))
+    #train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
+    #data, target = train_npz['data'], train_npz['target']
+    data1 = data.load_data(correct = True)
+    mean = np.mean(data1, axis=(0, 2, 3))
+    std = np.std(data1, axis=(0, 2, 3))
     transform = transforms.Normalize(mean, std)
-    data, target = torch.from_numpy(data), torch.from_numpy(target)
-    data = transform(data)
-    train_data, train_target, train_output_frame, test_data, test_target, test_output_frame, example_data, example_target = utils.data_preprocessing_forecasting_new(data, config)
+    #data, target = torch.from_numpy(data), torch.from_numpy(target)
+    data1 = torch.from_numpy(data1)
+    data1 = transform(data1)
+    train_data, train_target, train_output_frame, test_data, test_target, test_output_frame = utils.data_preprocessing_forecasting_new(data1, config)
     trainset = CustomDataset(train_data, train_target, train_output_frame)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=config.batch_size)
     
     testset = CustomDataset(test_data, test_target, test_output_frame)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=config.batch_size)
 
-    model = Seq2Seq(num_channels=config.num_channels, num_kernels=config.num_kernels,
+    model = Seq2Seq(attention_hidden_dims = config.attention_hidden_dims, num_channels=config.num_channels, num_kernels=config.num_kernels,
                 kernel_size=config.kernel_size, padding=config.padding, activation=config.activation,
                 frame_size=config.frame_size, num_layers=config.num_layers, num_timesteps = config.num_timesteps, bias = config.bias, w_init = config.w_init, hidden_size = config.hidden_size)
     
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr, weight_decay = config.weight_decay)
     model = model.to(device)
-    return model, train_loader, test_loader, optimizer, example_data, example_target
+    return model, train_loader, test_loader, optimizer
 
 def model_pipeline(hyperparameters):
     with wandb.init(project="tc_forecast_prediction_rss", config=hyperparameters):
         config = wandb.config
         random.seed(config.s)
-        model, train_loader, test_loader, optimizer, example_data, example_target = make(config)
-        run_model(model, train_loader, test_loader, optimizer, config, example_data, example_target)
+        model, train_loader, test_loader, optimizer = make(config)
+        run_model(model, train_loader, test_loader, optimizer, config)
         return model
 
 if __name__=='__main__':

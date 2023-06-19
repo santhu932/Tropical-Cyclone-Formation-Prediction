@@ -396,7 +396,7 @@ def data_preprocessing_forecasting_new(data, config):
     other_positive_indices = [index for index, value in enumerate(other_tcLabels) if value == 1]
     
     positive_indices = [index for index, value in enumerate(tc_labels) if value == 1]
-    positive_indices = positive_indices[0:1] + positive_indices[2:]
+    #positive_indices = positive_indices[0:1] + positive_indices[2:]
     #print(positive_indices[1])
     negative_tc_indices = [index for index in other_negative_indices if index not in positive_indices]
     positive_otherTc_indices = [index for index in other_positive_indices if index not in positive_indices]
@@ -419,14 +419,14 @@ def data_preprocessing_forecasting_new(data, config):
     reshaped_data = data.reshape(data.shape[0],1, data.shape[1],data.shape[2], data.shape[3])
     sampled_data = np.zeros((len(indices),6,data.shape[1],data.shape[2], data.shape[3]))
     
-    example_data = np.zeros((1,4,data.shape[1],data.shape[2], data.shape[3]))
-    example_target = np.zeros((1,2,data.shape[1],data.shape[2], data.shape[3]))
-    example_data[0,0, :, :, :] = reshaped_data[46, 0, :, :, :]
-    example_data[0,1, :, :, :] = reshaped_data[47, 0, :, :, :]
-    example_data[0,2, :, :, :] = reshaped_data[48, 0, :, :, :]
-    example_data[0,3, :, :, :] = reshaped_data[49, 0, :, :, :]
-    example_target[0,0, :, :, :] = reshaped_data[50, 0, :, :, :]
-    example_target[0,1, :, :, :] = reshaped_data[51, 0, :, :, :]
+#    example_data = np.zeros((1,4,data.shape[1],data.shape[2], data.shape[3]))
+#    example_target = np.zeros((1,2,data.shape[1],data.shape[2], data.shape[3]))
+#    example_data[0,0, :, :, :] = reshaped_data[46, 0, :, :, :]
+#    example_data[0,1, :, :, :] = reshaped_data[47, 0, :, :, :]
+#    example_data[0,2, :, :, :] = reshaped_data[48, 0, :, :, :]
+#    example_data[0,3, :, :, :] = reshaped_data[49, 0, :, :, :]
+#    example_target[0,0, :, :, :] = reshaped_data[50, 0, :, :, :]
+#    example_target[0,1, :, :, :] = reshaped_data[51, 0, :, :, :]
     
     for i , val in enumerate(indices):
         sampled_data[i,0, :, :, :] = reshaped_data[val - 5, 0, :, :, :]
@@ -524,8 +524,8 @@ def data_preprocessing_forecasting_new(data, config):
     train_data, train_target, train_output_frame = torch.from_numpy(train_data), torch.from_numpy(train_target), torch.from_numpy(train_output_frame)
     train_data = train_data.permute(0,2,1,3,4)
     
-    example_data, example_target = torch.from_numpy(example_data), torch.from_numpy(example_target)
-    example_data = example_data.permute(0,2,1,3,4)
+#    example_data, example_target = torch.from_numpy(example_data), torch.from_numpy(example_target)
+#    example_data = example_data.permute(0,2,1,3,4)
     
     test_data = final_data[int(0.8 * len(final_data)):]
     test_target = target[int(0.8 * len(final_data)):]
@@ -537,4 +537,4 @@ def data_preprocessing_forecasting_new(data, config):
     del final_target_frame
     del target
     
-    return train_data, train_target, train_output_frame, test_data, test_target, test_output_frame, example_data, example_target
+    return train_data, train_target, train_output_frame, test_data, test_target, test_output_frame

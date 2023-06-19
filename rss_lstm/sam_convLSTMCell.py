@@ -11,6 +11,7 @@ class sam_ConvLSTMCell(nn.Module):
 
         super(sam_ConvLSTMCell, self).__init__()
         self.bias = bias
+        self.w_init = w_init
             
         self.convLSTMcell = ConvLSTMCell(in_channels, out_channels,
         kernel_size, padding, activation, frame_size, bias = self.bias)
