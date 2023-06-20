@@ -11,12 +11,12 @@ import random
 import math
 from lstm import utils
 import wandb
-import data
+#import data
 
 config = dict(epochs = 50,
 				clip = 0.0, 
 				s = 10, 
-				num_channels = 13,
+				num_channels = 7,
 				num_kernels = 64,
 				kernel_size = (3, 3),
 				padding = (1, 1),
@@ -25,8 +25,8 @@ config = dict(epochs = 50,
 				num_layers=3, 
 				bias = True,
 				w_init = True,
-				batch_size = 4,
-				lr = 0.001,
+				batch_size = 16,
+				lr = 0.0005,
 				hidden_size = 128,
 				weight_decay = 0.0,
 				num_timesteps = 4,
@@ -70,22 +70,22 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         false_negative = 0
         inputs, labels, target_output_frames = inputs.float().to(device), labels.float().to(device), target_output_frames.float().to(device)
         #RSS
-#        prob_mask = torch.rand(labels.shape[0], config.num_timesteps - 1)
-#        prob_mask1 = torch.rand(labels.shape[0], 1)
-#        prob_mask, prob_mask1 = prob_mask.to(device), prob_mask1.to(device)
-#        if epoch < config.sampling_step1:
-#            prob_mask = (prob_mask < config.threshold).float()
-#            prob_mask1 = (prob_mask1 < config.threshold).float()
-#        elif epoch < config.sampling_step2:
-#            prob_mask = (prob_mask < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
-#            prob_mask1 = (prob_mask1 < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
-#        else:
-#            prob_mask = (prob_mask < 1.0).float()
-#            prob_mask1 = (prob_mask1 < 1.0).float()
-#        prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
-#        prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
+        prob_mask = torch.rand(labels.shape[0], config.num_timesteps - 1)
+        prob_mask1 = torch.rand(labels.shape[0], 1)
+        prob_mask, prob_mask1 = prob_mask.to(device), prob_mask1.to(device)
+        if epoch < config.sampling_step1:
+            prob_mask = (prob_mask < config.threshold).float()
+            prob_mask1 = (prob_mask1 < config.threshold).float()
+        elif epoch < config.sampling_step2:
+            prob_mask = (prob_mask < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
+            prob_mask1 = (prob_mask1 < (1 - config.threshold * (config.threshold_decay ** (epoch - config.sampling_step1 + 1)))).float()
+        else:
+            prob_mask = (prob_mask < 1.0).float()
+            prob_mask1 = (prob_mask1 < 1.0).float()
+        prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
+        prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
 
-        outputs, output_frames = model(inputs.float(), prediction = True)
+        outputs, output_frames = model(inputs.float(), target_output_frames, prob_mask, prob_mask1)
         log_probs = torch.sigmoid(outputs)
         labels = labels.reshape(labels.shape[0], 1)
         loss_func = torch.nn.BCELoss(reduction='none')
@@ -192,9 +192,11 @@ def run_model(model, train_loader, test_loader, optimizer, config):
      
 
 def make(config):
-    #train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
-    #data, target = train_npz['data'], train_npz['target']
-    data1 = data.load_data(correct = True)
+    train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
+    data, target = train_npz['data'], train_npz['target']
+    data1 = data[:,:7]
+    #data1 = np.concatenate((data[:, :3], data[:, 6:7]), axis=1)
+    #data1 = data.load_data(correct = True)
     mean = np.mean(data1, axis=(0, 2, 3))
     std = np.std(data1, axis=(0, 2, 3))
     transform = transforms.Normalize(mean, std)
