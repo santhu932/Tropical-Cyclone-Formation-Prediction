@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from rss_lstm.sam_seq2seq import Seq2Seq
+from rss_lstm.seq2seq import Seq2Seq
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
 import torchvision.transforms as transforms
@@ -14,28 +14,28 @@ import wandb
 #import data
 
 config = dict(epochs = 50,
-				clip = 0.0, 
-				s = 10, 
-				num_channels = 7,
-				num_kernels = 64,
-				kernel_size = (3, 3),
-				padding = (1, 1),
-				activation = "elu",
-				frame_size = (41, 161), 
-				num_layers=3, 
-				bias = True,
-				w_init = True,
-				batch_size = 16,
-				lr = 0.0005,
-				hidden_size = 128,
-				weight_decay = 0.0,
-				num_timesteps = 4,
+                clip = 0.0,
+                s = 10,
+                num_channels = 4,
+                num_kernels = 64,
+                kernel_size = (3, 3),
+                padding = (1, 1),
+                activation = "elu",
+                frame_size = (41, 161),
+                num_layers=3,
+                bias = True,
+                w_init = True,
+                batch_size = 32,
+                lr = 0.0005,
+                hidden_size = 128,
+                weight_decay = 0.0,
+                num_timesteps = 4,
                 threshold = 0.5,
                 threshold_decay = 0.95,
                 sampling_step1 = 15,
                 sampling_step2 = 30,
                 attention_hidden_dims = 4
-				)
+                )
               
 # Use GPU if available
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -85,7 +85,7 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         prob_mask = prob_mask.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
         prob_mask1 = prob_mask1.unsqueeze(1).unsqueeze(3).unsqueeze(4).expand(-1, config.num_channels, -1, config.frame_size[0], config.frame_size[1])
 
-        outputs, output_frames = model(inputs.float(), target_output_frames, prob_mask, prob_mask1)
+        outputs, output_frames = model(inputs.float(), prediction = True)
         log_probs = torch.sigmoid(outputs)
         labels = labels.reshape(labels.shape[0], 1)
         loss_func = torch.nn.BCELoss(reduction='none')
@@ -194,8 +194,8 @@ def run_model(model, train_loader, test_loader, optimizer, config):
 def make(config):
     train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
     data, target = train_npz['data'], train_npz['target']
-    data1 = data[:,:7]
-    #data1 = np.concatenate((data[:, :3], data[:, 6:7]), axis=1)
+    #data1 = data[:,:3]
+    data1 = np.concatenate((data[:, :3], data[:, 6:7]), axis=1)
     #data1 = data.load_data(correct = True)
     mean = np.mean(data1, axis=(0, 2, 3))
     std = np.std(data1, axis=(0, 2, 3))
@@ -210,7 +210,7 @@ def make(config):
     testset = CustomDataset(test_data, test_target, test_output_frame)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=config.batch_size)
 
-    model = Seq2Seq(attention_hidden_dims = config.attention_hidden_dims, num_channels=config.num_channels, num_kernels=config.num_kernels,
+    model = Seq2Seq(num_channels=config.num_channels, num_kernels=config.num_kernels,
                 kernel_size=config.kernel_size, padding=config.padding, activation=config.activation,
                 frame_size=config.frame_size, num_layers=config.num_layers, num_timesteps = config.num_timesteps, bias = config.bias, w_init = config.w_init, hidden_size = config.hidden_size)
     
