@@ -67,7 +67,7 @@ class Seq2Seq(nn.Module):
         self.batchnorm2 = nn.BatchNorm2d(num_features=32)
         self.dropout2 = nn.Dropout2d(p=0.5)
         self.conv3 = nn.Conv2d(
-            in_channels=32, out_channels=num_channels,
+            in_channels=32, out_channels=num_channels + 1,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         
         self.decoder = nn.Sequential(

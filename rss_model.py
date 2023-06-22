@@ -9,8 +9,9 @@ import torchvision.transforms as transforms
 import pandas as pd
 import random
 import math
-from lstm import utils
+from lstm import data_utils
 import wandb
+import metric
 #import data
 
 config = dict(epochs = 50,
@@ -41,10 +42,11 @@ config = dict(epochs = 50,
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, data, labels, output_frames):
+    def __init__(self, data, labels, output_frames, grid_labels):
         self.data = data
         self.labels = labels
         self.output_frames = output_frames
+        self.grid_labels = grid_labels
 
     def __len__(self):
         return len(self.labels)
@@ -53,7 +55,8 @@ class CustomDataset(torch.utils.data.Dataset):
         sample = self.data[idx]
         label = self.labels[idx]
         output_frame = self.output_frames[idx]
-        return sample, label, output_frame
+        grid_label = self.grid_labels[idx]
+        return sample, label, output_frame, grid_label
 
     
     
@@ -63,12 +66,12 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
     batch_count = 0
     examples_count = 0
     model.train()
-    for i, (inputs, labels, target_output_frames) in enumerate(train_loader, 1):
+    for i, (inputs, labels, target_output_frames, grid_labels) in enumerate(train_loader, 1):
         true_positive = 0
         true_negative = 0
         false_positive = 0
         false_negative = 0
-        inputs, labels, target_output_frames = inputs.float().to(device), labels.float().to(device), target_output_frames.float().to(device)
+        inputs, labels, target_output_frames, grid_labels = inputs.float().to(device), labels.float().to(device), target_output_frames.float().to(device), grid_labels.to(device)
         #RSS
         prob_mask = torch.rand(labels.shape[0], config.num_timesteps - 1)
         prob_mask1 = torch.rand(labels.shape[0], 1)
@@ -92,9 +95,10 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         bce_loss = loss_func(log_probs, labels)
         bce_loss = bce_loss/torch.max(bce_loss)
         label_loss = torch.sum(bce_loss) / labels.shape[0]
-        recon_loss = F.mse_loss(output_frames.float(), target_output_frames.float())
+        recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames[:, :, :(target_output_frames.shape[2] - 1), :, :].float())
         recon_loss = recon_loss/config.batch_size
-        loss = label_loss + recon_loss
+        grid_loss = metric.focal_loss(output_frames[:, :, (output_frames.shape[2] - 1), :, :], grid_labels)
+        loss = label_loss + recon_loss + grid_loss
         optimizer.zero_grad()
         loss.backward()
         if config.clip > 0:
@@ -123,9 +127,9 @@ def eval_epoch(model, test_loader, epoch, config):
     false_positive = 0
     false_negative = 0
     with torch.no_grad():
-        for i, (inputs, labels, target_output_frames) in enumerate(test_loader, 1):
+        for i, (inputs, labels, target_output_frames, grid_labels) in enumerate(test_loader, 1):
             #example_data, example_target = example_data.float().to(device), example_target.float().to(device)
-            inputs, labels, target_output_frames = inputs.float().to(device), labels.float().to(device), target_output_frames.to(device)
+            inputs, labels, target_output_frames, grid_labels = inputs.float().to(device), labels.float().to(device), target_output_frames.to(device), grid_labels.to(device)
 #            if i == 1:
 #                inputs[0] = example_data[0]
 #                labels[0] = 1
@@ -155,9 +159,10 @@ def eval_epoch(model, test_loader, epoch, config):
                 #torch.onnx.export(model, inputs, "model.onnx")
                 #wandb.save("model.onnx")
 
-            recon_loss = F.mse_loss(output_frames.float(), target_output_frames.float())
+            recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames[:, :, :(target_output_frames.shape[2] - 1), :, :].float())
             recon_loss = recon_loss/config.batch_size
-            loss =  label_loss + recon_loss
+            grid_loss = metric.focal_loss(output_frames[:, :, (output_frames.shape[2] - 1), :, :], grid_labels)
+            loss =  label_loss + recon_loss + grid_loss
             true_positive += torch.sum((log_probs > 0.5) * (labels == 1))
             true_negative += torch.sum((log_probs <= 0.5) * (labels == 0))
             false_positive += torch.sum((log_probs > 0.5) * (labels == 0))
@@ -203,11 +208,11 @@ def make(config):
     #data, target = torch.from_numpy(data), torch.from_numpy(target)
     data1 = torch.from_numpy(data1)
     data1 = transform(data1)
-    train_data, train_target, train_output_frame, test_data, test_target, test_output_frame = utils.data_preprocessing_forecasting_new(data1, config)
-    trainset = CustomDataset(train_data, train_target, train_output_frame)
+    train_data, train_target, train_output_frame, train_grid_labels, test_data, test_target, test_output_frame, test_grid_labels = data_utils.data_preprocessing_forecasting_new(data1, config)
+    trainset = CustomDataset(train_data, train_target, train_output_frame, train_grid_labels)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=config.batch_size)
     
-    testset = CustomDataset(test_data, test_target, test_output_frame)
+    testset = CustomDataset(test_data, test_target, test_output_frame, test_grid_labels)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=config.batch_size)
 
     model = Seq2Seq(num_channels=config.num_channels, num_kernels=config.num_kernels,
