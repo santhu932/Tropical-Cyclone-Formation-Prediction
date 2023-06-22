@@ -396,7 +396,7 @@ def data_preprocessing_forecasting_new(data, config):
     other_positive_indices = [index for index, value in enumerate(other_tcLabels) if value == 1]
     
     positive_indices = [index for index, value in enumerate(tc_labels) if value == 1]
-    #positive_indices = positive_indices[0:1] + positive_indices[2:]
+    positive_indices = positive_indices[0:1] + positive_indices[2:]
     #print(positive_indices[1])
     negative_tc_indices = [index for index in other_negative_indices if index not in positive_indices]
     positive_otherTc_indices = [index for index in other_positive_indices if index not in positive_indices]
