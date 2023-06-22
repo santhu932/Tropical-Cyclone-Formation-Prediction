@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from rss_lstm.sa_convLSTM import SAMConvLSTM
+from rss_lstm.sam_convLSTM import SAMConvLSTM
 from vit_pytorch import ViT
 import torchvision.transforms as transforms
 import numpy as np
@@ -58,7 +58,7 @@ class Seq2Seq(nn.Module):
                 
         # Add Convolutional Layer to predict output frame
         self.conv1 = nn.Conv2d(
-            in_channels=num_kernels, out_channels=num_channels,
+            in_channels=num_kernels, out_channels=num_kernels,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         self.batchnorm1 = nn.BatchNorm2d(num_features=num_kernels)
         self.dropout1 = nn.Dropout2d(p=0.5)
@@ -73,14 +73,14 @@ class Seq2Seq(nn.Module):
         
         self.decoder = nn.Sequential(
             self.conv1,
-            #self.activation,
-            #self.batchnorm1,
-            #self.dropout1,
-            #self.conv2,
-            #self.activation,
-            #self.batchnorm2,
-            #self.dropout2,
-            #self.conv3
+            self.activation,
+            self.batchnorm1,
+            self.dropout1,
+            self.conv2,
+            self.activation,
+            self.batchnorm2,
+            self.dropout2,
+            self.conv3
         )
 
         self.fc1 = nn.Linear(num_kernels * frame_size[0] * frame_size[1], 1024, bias = self.bias)
@@ -97,14 +97,14 @@ class Seq2Seq(nn.Module):
         self.fc = nn.Sequential(
             self.fc1,
             self.activation,
-            #self.batchnorm3,
+            self.batchnorm3,
             self.dropout3,
             self.fc2,
             self.activation,
-            #self.batchnorm4,
+            self.batchnorm4,
             self.fc3,
             self.activation,
-            #self.batchnorm5,
+            self.batchnorm5,
             self.dropout4,
             self.fc4
         )
@@ -124,22 +124,24 @@ class Seq2Seq(nn.Module):
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LeakyReLU):
             m.negative_slope = 0.1
-            
+			
 
-        
+		
                 
     def forward(self, X, target_frames = None, prob_mask = None, prob_mask1 = None, prediction = False):
         previous_H = {}
         previous_C = {}
+        previous_M = {}
         for t in range(self.num_timesteps):
             if t == 0:
                 x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
-                        output, C = module(x)
+                        output, C, M = module(x)
                         previous_H[name] = output
                         previous_C[name] = C
+                        previous_M[name] = M
                     else:
                         output = module(x)
                     x = output
@@ -153,9 +155,10 @@ class Seq2Seq(nn.Module):
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
-                        output, C = module(x, previous_H[name], previous_C[name])
+                        output, C, M = module(x, previous_H[name], previous_C[name], previous_M[name])
                         previous_H[name] = output
                         previous_C[name] = C
+                        previous_M[name] = M
                     else:
                         output = module(x)
                     x = output
@@ -171,10 +174,11 @@ class Seq2Seq(nn.Module):
         for i, module in enumerate(self.module_list):
             if i % 2 == 0:
                 name = f"convlstm{(i // 2) + 1}"
-                output, C = module(recon_frame, previous_H[name], previous_C[name])
+                output, C, M = module(recon_frame, previous_H[name], previous_C[name], previous_M[name])
                 previous_H[name] = output
                 previous_C[name] = C
-            else:
+                previous_M[name] = M
+             else:
                 output = module(recon_frame)
             recon_frame = output
         recon_frame = self.decoder(recon_frame)

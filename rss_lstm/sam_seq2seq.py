@@ -58,7 +58,7 @@ class Seq2Seq(nn.Module):
                 
         # Add Convolutional Layer to predict output frame
         self.conv1 = nn.Conv2d(
-            in_channels=num_kernels, out_channels=num_kernels,
+            in_channels=num_kernels, out_channels=num_channels,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         self.batchnorm1 = nn.BatchNorm2d(num_features=num_kernels)
         self.dropout1 = nn.Dropout2d(p=0.5)
@@ -73,14 +73,14 @@ class Seq2Seq(nn.Module):
         
         self.decoder = nn.Sequential(
             self.conv1,
-            self.activation,
-            self.batchnorm1,
-            self.dropout1,
-            self.conv2,
-            self.activation,
-            self.batchnorm2,
-            self.dropout2,
-            self.conv3
+            #self.activation,
+            #self.batchnorm1,
+            #self.dropout1,
+            #self.conv2,
+            #self.activation,
+            #self.batchnorm2,
+            #self.dropout2,
+            #self.conv3
         )
 
         self.fc1 = nn.Linear(num_kernels * frame_size[0] * frame_size[1], 1024, bias = self.bias)
