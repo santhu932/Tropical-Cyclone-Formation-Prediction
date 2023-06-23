@@ -67,7 +67,7 @@ class Seq2Seq(nn.Module):
         self.batchnorm2 = nn.BatchNorm2d(num_features=32)
         self.dropout2 = nn.Dropout2d(p=0.5)
         self.conv3 = nn.Conv2d(
-            in_channels=32, out_channels=num_channels + 1,
+            in_channels=32, out_channels= num_channels + 1,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         
         self.decoder = nn.Sequential(
@@ -165,6 +165,9 @@ class Seq2Seq(nn.Module):
         recon_frames = torch.zeros(recon_frame.shape[0], 2, recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3], device = device)
         recon_frames[:,0] = recon_frame.clone()
         #recon_frame = recon_frame.reshape(recon_frame.shape[0], recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3])
+        #print(recon_frame.shape)
+        recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
+        #print(recon_frame.shape)
         if prediction == False:
             recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, 0]
         for i, module in enumerate(self.module_list):

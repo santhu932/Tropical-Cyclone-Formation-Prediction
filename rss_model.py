@@ -95,9 +95,10 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         bce_loss = loss_func(log_probs, labels)
         bce_loss = bce_loss/torch.max(bce_loss)
         label_loss = torch.sum(bce_loss) / labels.shape[0]
-        recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames[:, :, :(target_output_frames.shape[2] - 1), :, :].float())
+        recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames.float())
         recon_loss = recon_loss/config.batch_size
-        grid_loss = metric.focal_loss(output_frames[:, :, (output_frames.shape[2] - 1), :, :], grid_labels)
+        y_pred = torch.sigmoid(output_frames[:,:, (output_frames.shape[2] - 1), :, :])
+        grid_loss = metric.focal_loss(y_pred, grid_labels)
         loss = label_loss + recon_loss + grid_loss
         optimizer.zero_grad()
         loss.backward()
@@ -126,6 +127,8 @@ def eval_epoch(model, test_loader, epoch, config):
     true_negative = 0
     false_positive = 0
     false_negative = 0
+    pred_grid_labels = []
+    true_grid_labels = []
     with torch.no_grad():
         for i, (inputs, labels, target_output_frames, grid_labels) in enumerate(test_loader, 1):
             #example_data, example_target = example_data.float().to(device), example_target.float().to(device)
@@ -159,7 +162,7 @@ def eval_epoch(model, test_loader, epoch, config):
                 #torch.onnx.export(model, inputs, "model.onnx")
                 #wandb.save("model.onnx")
 
-            recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames[:, :, :(target_output_frames.shape[2] - 1), :, :].float())
+            recon_loss = F.mse_loss(output_frames[:, :, :(output_frames.shape[2] - 1), :, :].float(), target_output_frames.float())
             recon_loss = recon_loss/config.batch_size
             grid_loss = metric.focal_loss(output_frames[:, :, (output_frames.shape[2] - 1), :, :], grid_labels)
             loss =  label_loss + recon_loss + grid_loss
@@ -170,12 +173,20 @@ def eval_epoch(model, test_loader, epoch, config):
             test_loss += loss.cpu().data.numpy()
             all_predicted_labels.append(outputs.detach().cpu().numpy().argmax(axis=1))
             all_labels.append(labels.cpu().numpy())
+            y_pred = torch.sigmoid(output_frames[:,1, (output_frames.shape[2] - 1), :, :])
+            pred_grid_labels.append(y_pred.detach().cpu().numpy())
+            true_grid_labels.append(grid_labels[:,1].detach().cpu().numpy())
+    pred_grid_labels = np.concatenate(pred_grid_labels, axis=0).squeeze()
+    true_grid_labels = np.concatenate(true_grid_labels, axis=0).squeeze()
+    stat1 = data_utils.bbiou(pred_grid_labels, true_grid_labels, iou_threshold=0.5, pred_threshold = 0.5)
     all_predicted_labels = np.concatenate(all_predicted_labels, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     # accuracy
     acc = (true_positive + true_negative)/(true_negative + true_positive + false_positive + false_negative)
     stat = {'TP': true_positive, 'TN': true_negative, 'FP': false_positive, 'FN': false_negative}
     print(stat)
+    print("Spatial metrics:\n")
+    print(stat1)
     precision = true_positive / (true_positive + false_positive)
     recall = true_positive / (true_positive + false_negative)
     f1 = 2 * true_positive / (2 * true_positive + false_positive + false_negative)
@@ -224,7 +235,7 @@ def make(config):
     return model, train_loader, test_loader, optimizer
 
 def model_pipeline(hyperparameters):
-    with wandb.init(project="tc_forecast_prediction_rss", config=hyperparameters):
+    with wandb.init(project="tc_forecast_prediction_spatial", config=hyperparameters):
         config = wandb.config
         random.seed(config.s)
         model, train_loader, test_loader, optimizer = make(config)
