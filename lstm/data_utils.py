@@ -70,10 +70,8 @@ def data_preprocessing_forecasting_new(data, config):
         return gaussian_probs
 
     for i , val in enumerate(indices):
-
-        label_grid  = np.zeros((data.shape[1], data.shape[2], data.shape[3]))
-        gaussian_probs = get_gaussian_probs(latitudes[val], longitudes[val])
-        label_grid = label_grid + gaussian_probs
+        
+        
         #label_grid = torch.where(label_grid[0] > 0, 1, 0)
         sampled_data[i,0, :, :, :] = reshaped_data[val - 5, 0, :, :, :]
         sampled_data[i,1, :, :, :] = reshaped_data[val - 4, 0, :, :, :]
@@ -81,7 +79,14 @@ def data_preprocessing_forecasting_new(data, config):
         sampled_data[i,3, :, :, :] = reshaped_data[val - 2, 0, :, :, :]
         sampled_data[i,4, :, :, :] = reshaped_data[val - 1, 0, :, :, :]
         sampled_data[i,5, :, :, :] = reshaped_data[val - 0, 0, :, :, :]
-        sampled_data[i,6, :, :, :] = label_grid
+        if labels[i] == 1:
+            label_grid  = np.zeros((data.shape[1], data.shape[2], data.shape[3]))
+            gaussian_probs = get_gaussian_probs(latitudes[val], longitudes[val])
+            label_grid = label_grid + gaussian_probs
+            sampled_data[i,6, :, :, :] = label_grid
+        else:
+            label_zeros = np.zeros((data.shape[1], data.shape[2], data.shape[3]))
+            sampled_data[i,6, :, :, :] = label_zeros
 
     transform1 = transforms.Compose([
         #transforms.ToPILImage(),
@@ -107,8 +112,8 @@ def data_preprocessing_forecasting_new(data, config):
 
     sampled_input_data = np.zeros((sampled_data.shape[0], 4, sampled_data.shape[2], sampled_data.shape[3], sampled_data.shape[4]))
     sampled_target_data = np.zeros((sampled_data.shape[0], 2, sampled_data.shape[2], sampled_data.shape[3], sampled_data.shape[4]))
-    sampled_grid_label = np.zeros((sampled_data.shape[0], 2, sampled_data.shape[3], sampled_data.shape[4]))
-    label_zeros = np.zeros((sampled_data.shape[3], sampled_data.shape[4]))
+    sampled_grid_label = np.zeros((sampled_data.shape[0], 1, sampled_data.shape[3], sampled_data.shape[4]))
+    
     for i in range(sampled_data.shape[0]):
         sampled_input_data[i,0, :, :, :] = sampled_data[i,0, :, :, :]
         sampled_input_data[i,1, :, :, :] = sampled_data[i,1, :, :, :]
@@ -116,15 +121,14 @@ def data_preprocessing_forecasting_new(data, config):
         sampled_input_data[i,3, :, :, :] = sampled_data[i,3, :, :, :]
         sampled_target_data[i,0, :, :, :] = sampled_data[i,4, :, :, :]
         sampled_target_data[i,1, :, :, :] = sampled_data[i,5, :, :, :]
-        sampled_grid_label[i, 0, :, :] = label_zeros.copy()
-        sampled_grid_label[i, 1, :, :] = sampled_data[i, 6, 0, :, :]
+        sampled_grid_label[i, 0, :, :] = sampled_data[i, 6, 0, :, :]
     del sampled_data
     del longitudes
     del latitudes
 
     augmented_input_data = np.zeros((augmented_data.shape[0], 4, augmented_data.shape[2], augmented_data.shape[3], augmented_data.shape[4]))
     augmented_target_data = np.zeros((augmented_data.shape[0], 2, augmented_data.shape[2], augmented_data.shape[3], augmented_data.shape[4]))
-    augmented_grid_label = np.zeros((augmented_data.shape[0], 2, augmented_data.shape[3], augmented_data.shape[4]))
+    augmented_grid_label = np.zeros((augmented_data.shape[0], 1, augmented_data.shape[3], augmented_data.shape[4]))
     for i in range(augmented_data.shape[0]):
         augmented_input_data[i,0, :, :, :] = augmented_data[i,0, :, :, :]
         augmented_input_data[i,1, :, :, :] = augmented_data[i,1, :, :, :]
@@ -132,8 +136,7 @@ def data_preprocessing_forecasting_new(data, config):
         augmented_input_data[i,3, :, :, :] = augmented_data[i,3, :, :, :]
         augmented_target_data[i,0, :, :, :] = augmented_data[i,4, :, :, :]
         augmented_target_data[i,1, :, :, :] = augmented_data[i,5, :, :, :]
-        augmented_grid_label[i, 0, :, :] = label_zeros.copy()
-        augmented_grid_label[i, 1, :, :] = augmented_data[i,6, 0, :, :]
+        augmented_grid_label[i, 0, :, :] = augmented_data[i,6, 0, :, :]
     del augmented_data
 
     total_data = []

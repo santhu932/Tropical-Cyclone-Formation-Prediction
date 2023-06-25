@@ -1,8 +1,9 @@
 import torch.nn as nn
 import torch
 from rss_lstm.convLSTM import ConvLSTM
-from vit_pytorch import ViT
+#from vit_pytorch import ViT
 import torchvision.transforms as transforms
+from rss_lstm.transformer import ViT
 import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -67,7 +68,7 @@ class Seq2Seq(nn.Module):
         self.batchnorm2 = nn.BatchNorm2d(num_features=32)
         self.dropout2 = nn.Dropout2d(p=0.5)
         self.conv3 = nn.Conv2d(
-            in_channels=32, out_channels= num_channels + 1,
+            in_channels=32, out_channels= num_channels,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         
         self.decoder = nn.Sequential(
@@ -107,6 +108,18 @@ class Seq2Seq(nn.Module):
             self.dropout4,
             self.fc4
         )
+        
+        self.vit_model = ViT(image_size=(40, 160),
+                             patch_size=20,
+                             num_classes=2,
+                             dim=1024,
+                             depth=8,
+                             heads=12,
+                             mlp_dim=2048,
+                             channels=num_channels,
+                             dropout=0.1,
+                             emb_dropout=0.1
+                             ).to(device)
        
         if self.w_init == True:
             self.apply(self.weights_init)
@@ -166,7 +179,7 @@ class Seq2Seq(nn.Module):
         recon_frames[:,0] = recon_frame.clone()
         #recon_frame = recon_frame.reshape(recon_frame.shape[0], recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3])
         #print(recon_frame.shape)
-        recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
+        #recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
         #print(recon_frame.shape)
         if prediction == False:
             recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, 0]
@@ -181,7 +194,9 @@ class Seq2Seq(nn.Module):
             recon_frame = output
         recon_frame = self.decoder(recon_frame)
         recon_frames[:,1] = recon_frame.clone()
-
+        
+        reshaped_recon_frame = recon_frame[:,:,:40,:160]
+        grid_frame = self.vit_model(reshaped_recon_frame)
         
         #output = output - temp
         batch_size, n_channels, height, width = output.size()
@@ -189,5 +204,5 @@ class Seq2Seq(nn.Module):
         flatten_frame = output.reshape(batch_size, flatten_size)
         out = self.fc(flatten_frame)
         
-        return out, recon_frames
+        return out, recon_frames, grid_frame
     
