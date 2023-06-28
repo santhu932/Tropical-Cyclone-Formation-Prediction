@@ -2,8 +2,9 @@ import cv2 as cv
 import numpy as np
 
 def extract_bounding_boxes(y, threshold=0.5):
+    y = y[0].detach().cpu().numpy()
+    #print(y.shape)
     label_img = np.where(y > threshold, 1, 0)
-
     label_img = np.asarray(label_img, dtype=np.uint8)
     contours, _ = cv.findContours(label_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
     boxes = [cv.boundingRect(c) for c in contours]
@@ -105,7 +106,12 @@ def spatial_losses(ytrue, ypred, iou_threshold=0.5, pred_threshold=0.5):
     for gt_box in gt_bboxes:
         iou = [bb_iou(gt_box, box) for box in pred_bboxes]
         local_loss = [get_local_loss(gt_box, box) for box in pred_bboxes]
-        
+    if len(gt_bboxes) == 0 and len(pred_bboxes) > 0:
+        empty_box = [0,0,0,0]
+        iou = [bb_iou(empty_box, box) for box in pred_bboxes]
+        local_loss = [get_local_loss(empty_box, box) for box in pred_bboxes]
+    else:
+        return sum([1]), sum([1])
     return sum(iou), sum(local_loss)
     
 def loss_function(y_pred, y_true, iou_threshold=0.5, pred_threshold=0.5):
@@ -116,5 +122,7 @@ def loss_function(y_pred, y_true, iou_threshold=0.5, pred_threshold=0.5):
         iou, local_loss = spatial_losses(y_true[i], y_pred[i], iou_threshold, pred_threshold)
         iou += iou
         local_loss += local_loss
-    loss = ((1/iou) + 0.1 * local_loss)/N
+    loss = ((1 - iou) + 0.1 * local_loss)/N
+    print(iou)
+    print(loss)
     return loss

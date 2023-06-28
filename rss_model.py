@@ -13,6 +13,8 @@ from lstm import utils
 import wandb
 import metric
 from torchvision.ops import sigmoid_focal_loss
+from lstm import loss_utils
+import visualize
 #import data
 
 config = dict(epochs = 50,
@@ -102,8 +104,8 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         recon_loss = recon_loss/config.batch_size
         y_pred = torch.sigmoid(pred_grid_labels)
         #grid_loss = sigmoid_focal_loss(y_pred.float(), grid_labels.float(), alpha=0.25, gamma=2, reduction='sum') / grid_labels.size(0)
-        grid_loss = metric.dice_loss(y_pred.float(), grid_labels.float())
-        loss = label_loss + recon_loss + grid_loss
+        grid_loss = metric.focal_loss(y_pred.float(), grid_labels.float())
+        loss = label_loss +  recon_loss + grid_loss
         optimizer.zero_grad()
         loss.backward()
         if config.clip > 0:
@@ -170,7 +172,7 @@ def eval_epoch(model, test_loader, epoch, config):
             recon_loss = recon_loss/config.batch_size
             y_pred = torch.sigmoid(pred_grid)
             #grid_loss = sigmoid_focal_loss(y_pred.float(), grid_labels.float(), alpha=0.25, gamma=2, reduction='sum') / grid_labels.size(0)
-            grid_loss = metric.dice_loss(y_pred.float(), grid_labels.float())
+            grid_loss = metric.focal_loss(y_pred.float(), grid_labels.float())
             loss =  label_loss + recon_loss + grid_loss
             true_positive += torch.sum((log_probs > 0.5) * (labels == 1))
             true_negative += torch.sum((log_probs <= 0.5) * (labels == 0))
@@ -184,7 +186,7 @@ def eval_epoch(model, test_loader, epoch, config):
             true_grid_labels.append(grid_labels.detach().cpu().numpy())
     pred_grid_labels = np.concatenate(pred_grid_labels, axis=0).squeeze()
     true_grid_labels = np.concatenate(true_grid_labels, axis=0).squeeze()
-    stat1 = metric.bbiou(pred_grid_labels, true_grid_labels, iou_threshold=0.1, pred_threshold = 0.1)
+    stat1 = metric.bbiou(pred_grid_labels, true_grid_labels, iou_threshold=0.2, pred_threshold = 0.5)
     all_predicted_labels = np.concatenate(all_predicted_labels, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     # accuracy
