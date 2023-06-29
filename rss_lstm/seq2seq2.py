@@ -95,11 +95,11 @@ class Seq2Seq(nn.Module):
         self.vit_model = ViT(image_size=(40, 160),
                      patch_size=20,
                      num_classes=1,
-                     dim=1024,
-                     depth=8,
-                     heads=12,
-                     mlp_dim=2048,
-                     channels=num_channels,
+                     dim=512,
+                     depth=4,
+                     heads=6,
+                     mlp_dim=1024,
+                     channels=1,
                      dropout=0.1,
                      emb_dropout=0.1
                      ).to(device)
@@ -196,9 +196,9 @@ class Seq2Seq(nn.Module):
                 recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, t + 1]
         
         #output = output - temp
-        output = recon_frames[:, 3] - recon_frames[:, 0]
-        output = output[:, :, :40, :160]
-        #output = output.reshape(output.shape[0], 1, output.shape[1], output.shape[2])
+        output = recon_frames[:, 3, 3] - recon_frames[:, 0, 3]
+        output = output[:, :40, :160]
+        output = output.reshape(output.shape[0], 1, output.shape[1], output.shape[2])
         out = self.vit_model(output)
 #        batch_size, height, width = output.size()
 #        flatten_size = height * width

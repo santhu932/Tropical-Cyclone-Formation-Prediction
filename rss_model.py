@@ -12,8 +12,6 @@ import math
 from lstm import utils
 import wandb
 import metric
-from torchvision.ops import sigmoid_focal_loss
-from lstm import loss_utils
 import visualize
 #import data
 
@@ -181,7 +179,12 @@ def eval_epoch(model, test_loader, epoch, config):
             test_loss += loss.cpu().data.numpy()
             all_predicted_labels.append(outputs.detach().cpu().numpy().argmax(axis=1))
             all_labels.append(labels.cpu().numpy())
-            
+            if epoch == 2:
+                for k in range(grid_labels.shape[0]):
+                    if torch.any(grid_labels[k,0] > 0.1).item():
+                        visualize.plot_grid_labels(grid_labels[k,0], save_path=f'visual_lstm/target/grid_labels-{k}.png')
+                    if torch.any(y_pred[k,0] > 0.1).item():
+                        visualize.plot_grid_labels(y_pred[k,0], save_path=f'visual_lstm/predicted/pred_grid_labels-{k}.png')
             pred_grid_labels.append(y_pred.detach().cpu().numpy())
             true_grid_labels.append(grid_labels.detach().cpu().numpy())
     pred_grid_labels = np.concatenate(pred_grid_labels, axis=0).squeeze()

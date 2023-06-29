@@ -9,7 +9,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class Seq2Seq(nn.Module):
 
     def __init__(self, num_channels, num_kernels, kernel_size, padding,
-    activation, frame_size, num_layers, num_timesteps, bias, w_init, hidden_size):
+    activation, frame_size, num_layers, num_timesteps, future_interval, bias, w_init, hidden_size, forecasting = True):
 
         super(Seq2Seq, self).__init__()
         self.bias = bias
@@ -17,6 +17,8 @@ class Seq2Seq(nn.Module):
         self.hidden_size = hidden_size
         self.num_channels = num_channels
         self.num_timesteps = num_timesteps
+        self.forecasting = forecasting
+        self.future_interval = future_interval
 
         if activation == "tanh":
             self.activation = torch.tanh
@@ -127,7 +129,7 @@ class Seq2Seq(nn.Module):
 
         
                 
-    def forward(self, X, target_frames = None, prob_mask = None, prob_mask1 = None, prediction = False):
+    def forward(self, X):
         previous_H = {}
         previous_C = {}
         for t in range(self.num_timesteps):
@@ -144,11 +146,7 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
             else:
-                #x = X[:,:,t]
-                if prediction == False:
-                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
-                else:
-                    x = X[:,:,t]
+                x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
@@ -160,27 +158,23 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
 
-        
-        #temp = output.clone()
-        recon_frames = torch.zeros(recon_frame.shape[0], 2, recon_frame.shape[1] - 1, recon_frame.shape[2], recon_frame.shape[3], device = device)
+        recon_frames = torch.zeros(recon_frame.shape[0], self.future_interval, recon_frame.shape[1] - 1, recon_frame.shape[2], recon_frame.shape[3], device = device)
         recon_frames[:,0] = recon_frame[:,:recon_frame.shape[1] - 1].clone()
-        #recon_frame = recon_frame.reshape(recon_frame.shape[0], recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3])
-        #print(recon_frame.shape)
-        recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
-        #print(recon_frame.shape)
-        if prediction == False:
-            recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, 0]
-        for i, module in enumerate(self.module_list):
-            if i % 2 == 0:
-                name = f"convlstm{(i // 2) + 1}"
-                output, C = module(recon_frame, previous_H[name], previous_C[name])
-                previous_H[name] = output
-                previous_C[name] = C
-            else:
-                output = module(recon_frame)
-            recon_frame = output
-        recon_frame = self.decoder(recon_frame)
-        recon_frames[:,1] = recon_frame[:,:recon_frame.shape[1] - 1].clone()
+        
+        if self.forecasting == True:
+            for t in range(self.future_interval - 1):
+                recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
+                for i, module in enumerate(self.module_list):
+                    if i % 2 == 0:
+                        name = f"convlstm{(i // 2) + 1}"
+                        output, C = module(recon_frame, previous_H[name], previous_C[name])
+                        previous_H[name] = output
+                        previous_C[name] = C
+                    else:
+                        output = module(recon_frame)
+                    recon_frame = output
+                recon_frame = self.decoder(recon_frame)
+                recon_frames[:, t + 1] = recon_frame[:,:recon_frame.shape[1] - 1].clone()
         grid_labels = recon_frame[:,recon_frame.shape[1] - 1]
         grid_labels = grid_labels.reshape(grid_labels.shape[0], 1, grid_labels.shape[1], grid_labels.shape[2])
 
