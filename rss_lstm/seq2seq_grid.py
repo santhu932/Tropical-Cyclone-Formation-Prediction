@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from rss_lstm.sa_convLSTM import SAMConvLSTM
+from rss_lstm.convLSTM import ConvLSTM
 from vit_pytorch import ViT
 import torchvision.transforms as transforms
 import numpy as np
@@ -8,8 +8,8 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class Seq2Seq(nn.Module):
 
-    def __init__(self, attention_hidden_dims, num_channels, num_kernels, kernel_size, padding,
-    activation, frame_size, num_layers, num_timesteps, bias, w_init, hidden_size):
+    def __init__(self, num_channels, num_kernels, kernel_size, padding,
+    activation, frame_size, num_layers, num_timesteps, future_interval, bias, w_init, hidden_size, forecasting = True):
 
         super(Seq2Seq, self).__init__()
         self.bias = bias
@@ -17,7 +17,8 @@ class Seq2Seq(nn.Module):
         self.hidden_size = hidden_size
         self.num_channels = num_channels
         self.num_timesteps = num_timesteps
-        self.attention_hidden_dims = attention_hidden_dims
+        self.forecasting = forecasting
+        self.future_interval = future_interval
 
         if activation == "tanh":
             self.activation = torch.tanh
@@ -32,14 +33,14 @@ class Seq2Seq(nn.Module):
         self.module_list = nn.ModuleList()
 
         # Add First layer (Different in_channels than the rest)
-        self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
+        self.module_list.append(ConvLSTM(
                 in_channels=num_channels, out_channels=self.hidden_size,
                 kernel_size=kernel_size, padding=padding,
                 activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init)),
         self.module_list.append(nn.BatchNorm2d(num_features=self.hidden_size))
 
 
-        self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
+        self.module_list.append(ConvLSTM(
                 in_channels=self.hidden_size, out_channels=num_kernels,
                 kernel_size=kernel_size, padding=padding,
                 activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init)),
@@ -49,7 +50,7 @@ class Seq2Seq(nn.Module):
         # Add rest of the layers
         for l in range(3, num_layers+1):
 
-            self.module_list.append(SAMConvLSTM(attention_hidden_dims=self.attention_hidden_dims,
+            self.module_list.append(ConvLSTM(
                     in_channels=num_kernels, out_channels=num_kernels,
                     kernel_size=kernel_size, padding=padding,
                     activation=activation, frame_size=frame_size, bias = self.bias, w_init=self.w_init))
@@ -58,7 +59,7 @@ class Seq2Seq(nn.Module):
                 
         # Add Convolutional Layer to predict output frame
         self.conv1 = nn.Conv2d(
-            in_channels=num_kernels, out_channels=num_channels,
+            in_channels=num_kernels, out_channels=num_kernels,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         self.batchnorm1 = nn.BatchNorm2d(num_features=num_kernels)
         self.dropout1 = nn.Dropout2d(p=0.5)
@@ -68,19 +69,19 @@ class Seq2Seq(nn.Module):
         self.batchnorm2 = nn.BatchNorm2d(num_features=32)
         self.dropout2 = nn.Dropout2d(p=0.5)
         self.conv3 = nn.Conv2d(
-            in_channels=32, out_channels=num_channels,
+            in_channels=32, out_channels= 1,
             kernel_size=kernel_size, padding=padding, bias = self.bias)
         
         self.decoder = nn.Sequential(
             self.conv1,
-            #self.activation,
-            #self.batchnorm1,
-            #self.dropout1,
-            #self.conv2,
-            #self.activation,
-            #self.batchnorm2,
-            #self.dropout2,
-            #self.conv3
+            self.activation,
+            self.batchnorm1,
+            self.dropout1,
+            self.conv2,
+            self.activation,
+            self.batchnorm2,
+            self.dropout2,
+            self.conv3
         )
 
         self.fc1 = nn.Linear(num_kernels * frame_size[0] * frame_size[1], 1024, bias = self.bias)
@@ -97,14 +98,14 @@ class Seq2Seq(nn.Module):
         self.fc = nn.Sequential(
             self.fc1,
             self.activation,
-            #self.batchnorm3,
+            self.batchnorm3,
             self.dropout3,
             self.fc2,
             self.activation,
-            #self.batchnorm4,
+            self.batchnorm4,
             self.fc3,
             self.activation,
-            #self.batchnorm5,
+            self.batchnorm5,
             self.dropout4,
             self.fc4
         )
@@ -128,7 +129,7 @@ class Seq2Seq(nn.Module):
 
         
                 
-    def forward(self, X, target_frames = None, prob_mask = None, prob_mask1 = None, prediction = False):
+    def forward(self, X):
         previous_H = {}
         previous_C = {}
         for t in range(self.num_timesteps):
@@ -145,11 +146,7 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
             else:
-                #x = X[:,:,t]
-                if prediction == False:
-                    x = prob_mask[:,:,t-1] * X[:,:,t] + (1 - prob_mask[: , :, t-1]) * recon_frame
-                else:
-                    x = X[:,:,t]
+                x = X[:,:,t]
                 for i, module in enumerate(self.module_list):
                     if i % 2 == 0:
                         name = f"convlstm{(i // 2) + 1}"
@@ -161,24 +158,25 @@ class Seq2Seq(nn.Module):
                     x = output
                 recon_frame = self.decoder(x)
 
+        #recon_frames = torch.zeros(recon_frame.shape[0], self.future_interval, recon_frame.shape[1] - 1, recon_frame.shape[2], recon_frame.shape[3], device = device)
+        #recon_frames[:,0] = recon_frame[:,:recon_frame.shape[1] - 1].clone()
         
-        #temp = output.clone()
-        recon_frames = torch.zeros(recon_frame.shape[0], 2, recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3], device = device)
-        recon_frames[:,0] = recon_frame.clone()
-        #recon_frame = recon_frame.reshape(recon_frame.shape[0], recon_frame.shape[1], recon_frame.shape[2], recon_frame.shape[3])
-        if prediction == False:
-            recon_frame = prob_mask1[:,:,0] * recon_frame + (1 - prob_mask1[: , :, 0]) * target_frames[:, 0]
-        for i, module in enumerate(self.module_list):
-            if i % 2 == 0:
-                name = f"convlstm{(i // 2) + 1}"
-                output, C = module(recon_frame, previous_H[name], previous_C[name])
-                previous_H[name] = output
-                previous_C[name] = C
-            else:
-                output = module(recon_frame)
-            recon_frame = output
-        recon_frame = self.decoder(recon_frame)
-        recon_frames[:,1] = recon_frame.clone()
+        if self.forecasting == True:
+            for t in range(self.future_interval - 1):
+                recon_frame = recon_frame[:,:recon_frame.shape[1] - 1]
+                for i, module in enumerate(self.module_list):
+                    if i % 2 == 0:
+                        name = f"convlstm{(i // 2) + 1}"
+                        output, C = module(recon_frame, previous_H[name], previous_C[name])
+                        previous_H[name] = output
+                        previous_C[name] = C
+                    else:
+                        output = module(recon_frame)
+                    recon_frame = output
+                recon_frame = self.decoder(recon_frame)
+                recon_frames[:, t + 1] = recon_frame[:,:recon_frame.shape[1] - 1].clone()
+        #grid_labels = recon_frame[:,recon_frame.shape[1] - 1]
+        #grid_labels = recon_frame.reshape(grid_labels.shape[0], 1, grid_labels.shape[1], grid_labels.shape[2])
 
         
         #output = output - temp
@@ -187,5 +185,5 @@ class Seq2Seq(nn.Module):
         flatten_frame = output.reshape(batch_size, flatten_size)
         out = self.fc(flatten_frame)
         
-        return out, recon_frames
+        return out, recon_frame
     
