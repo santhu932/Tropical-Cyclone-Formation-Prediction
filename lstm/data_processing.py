@@ -91,10 +91,40 @@ def load_data1(data, config):
     test_sampled_data = sampled_data[int(sampled_data.shape[0] * 0.8):]
     test_labels = labels[int(sampled_data.shape[0] * 0.8):]
     test_data, test_target, test_output_frames, test_grid_labels = data_augmentation(test_sampled_data, test_labels, config)
-
+    print(train_output_frames.shape)
+    print(test_output_frames.shape)
 
     return train_data, train_target, train_output_frames, train_grid_labels, test_data, test_target, test_output_frames, test_grid_labels
 
+def prepare_test_data(sampled_data, labels, config):
+    num_positive_indices = np.sum(labels)
+    print("test labels")
+    print(len(labels))
+    print(num_positive_indices)
+    
+    #sampled_data = sampled_data.numpy()
+    sampled_input_data = np.zeros((sampled_data.shape[0], config.num_timesteps, sampled_data.shape[2], sampled_data.shape[3], sampled_data.shape[4]))
+    sampled_target_data = np.zeros((sampled_data.shape[0], config.future_interval, sampled_data.shape[2], sampled_data.shape[3], sampled_data.shape[4]))
+    sampled_grid_label = np.zeros((sampled_data.shape[0], 1, sampled_data.shape[3], sampled_data.shape[4]))
+    
+    for i in range(sampled_data.shape[0]):
+        k = 0
+        while k < config.num_timesteps:
+            sampled_input_data[i, k, :, :, :] = sampled_data[i, k, :, :, :]
+            k += 1
+        j = 0
+        while k < config.num_timesteps + config.future_interval:
+            sampled_target_data[i, j, :, :, :] = sampled_data[i, k, :, :, :]
+            k += 1
+            j += 1
+        sampled_grid_label[i, 0, :, :] = sampled_data[i, k, 0, :, :]
+        
+    
+    target = np.array(labels)
+    final_data, target, final_target_frame, final_grid_label = torch.from_numpy(sampled_input_data), torch.from_numpy(target), torch.from_numpy(sampled_target_data), torch.from_numpy(sampled_grid_label)
+    final_data = final_data.permute(0,2,1,3,4)
+    
+    return final_data, target, final_target_frame, final_grid_label
 
 
 def data_augmentation(sampled_data, labels, config):
