@@ -3,23 +3,23 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from rss_lstm.seq2seq1 import Seq2Seq
+from rss_lstm.seq2seq_recon_grid import Seq2Seq
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
 import torchvision.transforms as transforms
 import pandas as pd
 import random
 import math
-from lstm import data_processing
+from lstm import loss_utils
 import wandb
 import metric
 #import visualize
-import data
+#import data
 
 config = dict(epochs = 50,
                 clip = 0.0,
                 s = 10,
-                num_channels = 13,
+                num_channels = 15,
                 num_kernels = 64,
                 kernel_size = (3, 3),
                 padding = (1, 1),
@@ -40,7 +40,9 @@ config = dict(epochs = 50,
                 attention_hidden_dims = 4,
                 future_interval = 1,
                 forecasting = True,
-                pred_thresold = 0.3
+                pred_thresold = 0.3,
+                iou_threshold = 0.1,
+                alpha = 0.75
                 )
               
 # Use GPU if available
@@ -106,7 +108,7 @@ def train_epoch(model, optimizer, train_loader, epoch, config):
         recon_loss = recon_loss/config.batch_size
         #y_pred = torch.sigmoid(pred_grid_labels)
         #grid_loss = sigmoid_focal_loss(y_pred.float(), grid_labels.float(), alpha=0.25, gamma=2, reduction='sum') / grid_labels.size(0)
-        grid_loss = metric.focal_loss(pred_grid_labels.float(), grid_labels.float())
+        grid_loss = metric.focal_loss(pred_grid_labels.float(), grid_labels.float(), alpha = config.alpha)
         loss = label_loss +  recon_loss + grid_loss
         optimizer.zero_grad()
         loss.backward()
@@ -181,7 +183,7 @@ def eval_epoch(model, test_loader, epoch, config):
             recon_loss = recon_loss/config.batch_size
             #y_pred = torch.sigmoid(pred_grid)
             #grid_loss = sigmoid_focal_loss(y_pred.float(), grid_labels.float(), alpha=0.25, gamma=2, reduction='sum') / grid_labels.size(0)
-            grid_loss = metric.focal_loss(pred_grid.float(), grid_labels.float())
+            grid_loss = metric.focal_loss(pred_grid.float(), grid_labels.float(), alpha = config.alpha)
             loss =  label_loss + recon_loss + grid_loss
             true_positive += torch.sum((log_probs > 0.5) * (labels == 1))
             true_negative += torch.sum((log_probs <= 0.5) * (labels == 0))
@@ -191,12 +193,12 @@ def eval_epoch(model, test_loader, epoch, config):
             all_predicted_labels.append(outputs.detach().cpu().numpy().argmax(axis=1))
             all_labels.append(labels.cpu().numpy())
             y_pred = torch.sigmoid(pred_grid)
-            if epoch == 47:
+            if epoch == 49 and i == 1:
                 for k in range(grid_labels.shape[0]):
                     if torch.any(grid_labels[k,0] > 0.1).item():
-                        plot_grid_labels(grid_labels[k,0].detach().cpu().numpy(), save_path=f'visual_lstm1/target/grid_labels-{k}.png')
+                        plot_grid_labels(grid_labels[k,0].detach().cpu().numpy(), save_path=f'visual_lstm_recon/target/grid_labels-{k}.png')
                     if torch.any(y_pred[k,0] > 0.1).item():
-                        plot_grid_labels(y_pred[k,0].detach().cpu().numpy(), save_path=f'visual_lstm1/predicted/pred_grid_labels-{k}.png')
+                        plot_grid_labels(y_pred[k,0].detach().cpu().numpy(), save_path=f'visual_lstm_recon/predicted/pred_grid_labels-{k}.png')
             pred_grid_labels.append(y_pred.detach().cpu().numpy())
             true_grid_labels.append(grid_labels.detach().cpu().numpy())
     pred_grid_labels = np.concatenate(pred_grid_labels, axis=0).squeeze()
@@ -231,18 +233,18 @@ def run_model(model, train_loader, test_loader, optimizer, config):
      
 
 def make(config):
-    #train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
-    #data, target = train_npz['data'], train_npz['target']
+    train_npz = np.load('ncep_WP_EP_new_2_binary.npz')
+    data1, target = train_npz['data'], train_npz['target']
     #data1 = data[:,:3]
     #data1 = np.concatenate((data[:, :3], data[:, 6:7]), axis=1)
-    data1 = data.load_data(correct = True)
+    #data1 = data.load_data(correct = True)
     mean = np.mean(data1, axis=(0, 2, 3))
     std = np.std(data1, axis=(0, 2, 3))
     transform = transforms.Normalize(mean, std)
     #data, target = torch.from_numpy(data), torch.from_numpy(target)
     data1 = torch.from_numpy(data1)
     data1 = transform(data1)
-    train_data, train_target, train_output_frame, train_grid_labels, test_data, test_target, test_output_frame, test_grid_labels = data_processing.load_data1(data1, config)
+    train_data, train_target, train_output_frame, train_grid_labels, test_data, test_target, test_output_frame, test_grid_labels = loss_utils.load_data_tc(data1, config)
     trainset = CustomDataset(train_data, train_target, train_output_frame, train_grid_labels)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=config.batch_size)
     
@@ -259,7 +261,7 @@ def make(config):
     return model, train_loader, test_loader, optimizer
 
 def model_pipeline(hyperparameters):
-    with wandb.init(project="tc_forecast_prediction_spatialnew", config=hyperparameters):
+    with wandb.init(project="tc_forecast_prediction_spatialRecon_new_TC", config=hyperparameters):
         config = wandb.config
         random.seed(config.s)
         model, train_loader, test_loader, optimizer = make(config)
